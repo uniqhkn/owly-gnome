@@ -7,6 +7,8 @@ node --input-type=module --check < extension/extension.js
 node --input-type=module --check < extension/chooser.js
 node tests/process.mjs
 python3 tests/installer.py
+python3 tests/backend.py
+python3 tests/draft.py
 python3 - <<'CHECK'
 import json
 from pathlib import Path

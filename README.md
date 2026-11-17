@@ -22,14 +22,23 @@ Send files to an iPhone or iPad, discover nearby AirDrop receivers, and approve 
 
 ## Install
 
-Clone this repository or extract a source release, then run from its root:
+Clone this repository or extract a source release. On a new machine, install the [system prerequisites](docs/BACKEND.md#prerequisites), then run from the repository root:
+
+```sh
+./scripts/setup.sh --check
+./scripts/setup.sh
+```
+
+Setup checks the desktop, fetches the pinned Owly source, applies the JSON patch, runs CLI tests, builds Owly, installs it with sudo, restarts its service and installs the extension. Run setup as your normal desktop user, not through sudo; only its backend installation step requests elevated access. This replaces Owly's system CLI/service files. Stop any existing sharing session first.
+
+If the patched backend is already installed and only the extension needs updating:
 
 ```sh
 ./scripts/install.sh --check
 ./scripts/install.sh
 ```
 
-Run as your desktop user, without sudo, from a GNOME terminal. Turn sharing off before updating. The script checks dependencies, installs the extension and attempts to enable it. It does not install the backend or change firewall rules.
+Neither path installs distribution packages or changes firewall rules. You need a GNOME session on a Linux system using systemd and NetworkManager for automatic backend installation. For source-only builds, offline/local source options, SELinux paths and manual installation, see [backend setup](docs/BACKEND.md).
 
 Log out and back in. If GNOME did not recognize the extension during installation:
 

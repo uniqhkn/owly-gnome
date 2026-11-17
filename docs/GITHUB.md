@@ -44,3 +44,13 @@ Review the draft before publishing. Add a real screenshot of the working Owly Qu
 ## 4. Later upstream work
 
 Open a separate Owly contribution proposing the JSON CLI interface. Keep it independent of this repository's UI. Do not present the patch as accepted upstream. Plan GNOME Extensions submission as a separate review task.
+
+## Refresh an existing draft after merging setup improvements
+
+From a clean checkout of the latest main commit:
+
+```sh
+./scripts/update-draft.sh
+```
+
+This verifies authentication, requires the existing release to be a draft and the local commit to match GitHub main, runs checks and packaging, then updates notes and replaces the two assets. It never publishes the release. It requires terminal network access and the GitHub CLI; the connected repository tools do not provide release asset uploads.

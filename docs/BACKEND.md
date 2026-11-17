@@ -11,7 +11,58 @@ The frontend calls the Owly CLI. Its JSON additions are distributed as a separat
 
 No radio daemon, Wi-Fi driver or AirDrop protocol state machine changes are included.
 
-## Build
+## Prerequisites
+
+Automatic system installation targets a GNOME desktop using systemd and NetworkManager. It is not a NixOS installation mechanism.
+
+Install these using your distribution's package manager before setup:
+
+- Git, Rust/Cargo 1.88 or newer, a C compiler (`cc`) and the usual native build toolchain.
+- GJS, GTK 4 introspection support, GNOME Shell and its `gnome-extensions` command.
+- sudo, D-Bus, systemd, polkit, NetworkManager (`nmcli`), iproute2 (`ip`), iputils (`ping`) and util-linux (`mount`). These runtime requirements follow the pinned Owly packaging.
+- BlueZ for Bluetooth wake-up advertisements; hostapd is needed for radio modes that use a hidden AP.
+
+Package names and installation paths vary by distribution. The scripts report missing commands and do not run a package manager. Wi-Fi hardware support and firewall setup remain upstream Owly requirements. A successful preflight does not establish that the radio works.
+
+## Guided setup
+
+From the frontend repository root, without sudo:
+
+```sh
+./scripts/setup.sh --check
+./scripts/setup.sh
+```
+
+The first command performs desktop/build prerequisite checks only. It does not download, patch, compile, contact the daemon, request sudo or change settings. It does not prove network access or native/runtime completeness.
+
+The second command clones the pinned backend into a versioned folder under `${XDG_CACHE_HOME:-$HOME/.cache}/owly-gnome/`, applies the supplied patch, runs CLI tests and builds release binaries. Only after successful tests/build does it invoke the upstream system installer using sudo, reload/start/restart owlyd and reload NetworkManager configuration. Then it installs/enables the extension for the current user. Log out and back in afterward.
+
+This overwrites Owly's existing system installation paths and restarts its daemon. Turn off sharing first. The installer is not transactional: a system-install failure is reported, but already installed system files are not automatically rolled back. Removing the frontend does not uninstall Owly.
+
+A different fresh clone location can be selected:
+
+```sh
+./scripts/setup.sh --work-dir /path/to/new/owly-backend
+```
+
+For an existing checkout at the pinned base:
+
+```sh
+./scripts/setup.sh --source /path/to/owly-backend
+```
+
+Only clean sources or sources containing exactly this project's patch are accepted. Other tracked changes, untracked files, and the wrong base are rejected without resetting or cleaning the checkout. Repeating setup with exactly the supplied patch is supported.
+
+To test/build without changing system files:
+
+```sh
+./scripts/backend.sh --source /path/to/owly-backend
+```
+
+Add `--install-system` to explicitly install that build. The script uses the checkout's `target/` directory, and `/usr/libexec` on detected SELinux systems. Offline builds require both an existing checkout and cached Cargo dependencies; use `CARGO_NET_OFFLINE=true` if required. Downloading from GitHub and crates.io on a new machine still requires working networking.
+
+## Manual build
+
 
 Install Rust 1.88 or newer and upstream Owly's distribution-specific dependencies first. From this frontend checkout:
 
