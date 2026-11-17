@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (draft)
 
 - Added a new-machine `setup.sh` entry point for desktop checks, pinned backend setup and frontend installation.
 - Added a backend builder with explicit system installation, Rust/C compiler checks, local-source support and exact-patch reruns.
@@ -9,7 +9,7 @@
 - Added disposable Git-fixture tests for patching, fresh clone flow, reruns, dirty sources, version errors, failures before sudo and setup orchestration.
 - Documented system dependencies, service changes and remaining fresh-machine validation limits.
 
-## 0.1.0
+### Frontend and packaging
 
 - Extracted the working Quick Settings frontend into its own repository.
 - Preserved the original development UUID and integer extension version 4 for update compatibility.
