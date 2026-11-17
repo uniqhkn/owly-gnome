@@ -28,6 +28,8 @@ esac''',
            "DBUS_SESSION_BUS_ADDRESS": "mock", "TEST_LOG": str(log)}
     subprocess.run([str(script), "--check"], env=env, check=True, capture_output=True)
     assert not log.exists(), "check mode changed extensions"
+    subprocess.run([str(script), "--check-desktop"], env={**env, "TEST_NO_JSON": "1"}, check=True, capture_output=True)
+    assert not log.exists(), "desktop check changed extensions"
     failed = subprocess.run([str(script), "--check"], env={**env, "TEST_NO_JSON": "1"}, capture_output=True)
     assert failed.returncode != 0 and b"lacks --json" in failed.stderr
     subprocess.run([str(script)], env=env, check=True, capture_output=True)

@@ -4,11 +4,12 @@ set -euo pipefail
 
 usage() {
     cat <<'HELP'
-Usage: ./scripts/install.sh [--check] [--help]
+Usage: ./scripts/install.sh [--check|--check-desktop] [--help]
 
 Check GNOME, GTK and the installed Owly JSON interface, then pack and
 install Owly Quick Settings for the current user and try to enable it.
---check   Check prerequisites only; do not install or change settings.
+--check   Check desktop and Owly prerequisites without changing settings.
+--check-desktop   Check desktop prerequisites only (before backend setup).
 
 Run from a terminal in your GNOME desktop session, without sudo.
 Turn off sharing before installing. Log out and back in after an update.
@@ -16,8 +17,10 @@ The Owly backend must already include the supplied JSON interface patch.
 HELP
 }
 check_only=false
+desktop_only=false
 case "${1:-}" in
     --check) check_only=true ;;
+    --check-desktop) check_only=true; desktop_only=true ;;
     --help|-h) usage; exit 0 ;;
     '') ;;
     *) usage >&2; exit 2 ;;
@@ -27,7 +30,7 @@ fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 [[ $EUID -ne 0 ]] || fail 'Run this script as your desktop user, without sudo.'
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 uuid=owly-quick-settings@owly.local
-for command_name in gnome-shell gnome-extensions gjs owly; do
+for command_name in gnome-shell gnome-extensions gjs; do
     command -v "$command_name" >/dev/null || fail "Missing command: $command_name"
 done
 shell_version=$(gnome-shell --version)
@@ -39,6 +42,11 @@ fi
 (( shell_major >= 45 && shell_major <= 51 )) || fail "Unsupported GNOME Shell target: $shell_version (expected 45–51)."
 printf 'GNOME: %s\n' "$shell_version"
 gjs -c "imports.gi.versions.Gtk = '4.0'; const Gtk = imports.gi.Gtk;" || fail 'GJS cannot load GTK 4.'
+if $desktop_only; then
+    printf 'Desktop prerequisites are available.\n'
+    exit 0
+fi
+command -v owly >/dev/null || fail 'Owly is missing. Run ./scripts/setup.sh or see docs/BACKEND.md.'
 for subcommand in browse receive 'radio up'; do
     read -r -a args <<< "$subcommand"
     help_output=$(owly "${args[@]}" --help) || fail "Cannot inspect owly $subcommand."
