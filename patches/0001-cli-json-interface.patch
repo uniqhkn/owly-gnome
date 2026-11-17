@@ -1,0 +1,196 @@
+diff --git a/crates/owly-cli/src/airdrop.rs b/crates/owly-cli/src/airdrop.rs
+index e36ee90..14cb491 100644
+--- a/crates/owly-cli/src/airdrop.rs
++++ b/crates/owly-cli/src/airdrop.rs
+@@ -10,6 +10,7 @@
+ 
+ use std::collections::BTreeSet;
+ use std::io;
++use std::io::Write;
+ use std::net::{Ipv6Addr, SocketAddrV6};
+ use std::path::PathBuf;
+ use std::process::ExitCode;
+@@ -53,6 +54,9 @@ pub struct On {
+ 
+ #[derive(clap::Args)]
+ pub struct ReceiveArgs {
++    /// Emit JSON Lines events; read {"id":N,"accept":true/false} from stdin.
++    #[arg(long, conflicts_with = "accept")]
++    json: bool,
+     #[command(flatten)]
+     on: On,
+     /// Where received files go.
+@@ -75,6 +79,9 @@ pub struct ReceiveArgs {
+ 
+ #[derive(clap::Args)]
+ pub struct BrowseArgs {
++    /// Emit one JSON object per discovered receiver.
++    #[arg(long)]
++    json: bool,
+     #[command(flatten)]
+     on: On,
+     /// How long to browse.
+@@ -154,7 +161,11 @@ pub async fn browse(bus: Option<&str>, args: BrowseArgs) -> Result<ExitCode, Str
+         let seen = std::cell::RefCell::new(std::collections::HashSet::new());
+         let show = |r: &Listed| {
+             if seen.borrow_mut().insert(r.addr) {
+-                println!("{:<14} {:?} ({})", r.instance, r.name, r.addr);
++                if args.json {
++                    emit_json(serde_json::json!({"event":"receiver", "id":r.instance, "name":r.name, "address":r.addr.to_string()}));
++                } else {
++                    println!("{:<14} {:?} ({})", r.instance, r.name, r.addr);
++                }
+             }
+         };
+         let by_peers = async {
+@@ -686,6 +697,9 @@ async fn run_receiver(
+         iface.addr
+     );
+ 
++    if args.json {
++        return receiver_json(events).await;
++    }
+     let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+     loop {
+         let event = tokio::select! {
+@@ -750,10 +764,92 @@ async fn run_receiver(
+     }
+ }
+ 
++/// JSON Lines is deliberately separate from diagnostics on stderr.
++fn emit_json(value: serde_json::Value) {
++    println!("{value}");
++    let _ = io::stdout().flush();
++}
++
++#[derive(serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Decision {
++    id: u64,
++    accept: bool,
++}
++
++async fn receiver_json(
++    mut events: tokio::sync::mpsc::Receiver<ReceiverEvent>,
++) -> io::Result<ExitCode> {
++    let mut pending: std::collections::HashMap<u64, owly_airdrop::driver::receiver::Request> =
++        std::collections::HashMap::new();
++    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
++    emit_json(serde_json::json!({"event":"ready"}));
++    loop {
++        tokio::select! {
++            _ = tokio::signal::ctrl_c() => return Ok(ExitCode::SUCCESS),
++            line = stdin.next_line() => {
++                let Some(line) = line? else { return Ok(ExitCode::SUCCESS) };
++                match serde_json::from_str::<Decision>(&line) {
++                    Ok(answer) => {
++                        if let Some(request) = pending.remove(&answer.id) {
++                            if answer.accept { request.accept(); } else { request.decline(); }
++                        }
++                    }
++                    Err(e) => eprintln!("invalid decision: {e}"),
++                }
++            }
++            event = events.recv() => {
++                let Some(event) = event else { return Ok(ExitCode::SUCCESS) };
++                match event {
++                    ReceiverEvent::Discovered { .. } => {},
++                    ReceiverEvent::Request(request) => {
++                        let items: Vec<String> = match &request.ask.offer {
++                            Offer::Files(files) => files.iter().map(|f| f.name.clone()).collect(),
++                            Offer::Urls(urls) => urls.clone(),
++                        };
++                        emit_json(serde_json::json!({"event":"request", "id":request.id,
++                            "sender":request.ask.sender_computer_name, "items":items, "timeout":15}));
++                        pending.insert(request.id, request);
++                    }
++                    ReceiverEvent::Withdrawn { id } => {
++                        pending.remove(&id);
++                        emit_json(serde_json::json!({"event":"withdrawn", "id":id}));
++                    }
++                    ReceiverEvent::Received { id, paths } => {
++                        emit_json(serde_json::json!({"event":"received", "id":id, "paths":paths}));
++                    }
++                    ReceiverEvent::Urls { id, urls } => {
++                        emit_json(serde_json::json!({"event":"urls", "id":id, "urls":urls}));
++                    }
++                    ReceiverEvent::Failed { id, reason } => {
++                        pending.remove(&id);
++                        emit_json(serde_json::json!({"event":"failed", "id":id, "reason":reason}));
++                    }
++                }
++            }
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn json_decisions_require_an_explicit_id_and_boolean() {
++        let answer: Decision = serde_json::from_str(r#"{"id":7,"accept":false}"#).unwrap();
++        assert_eq!(answer.id, 7);
++        assert!(!answer.accept);
++        for invalid in [
++            r#"{"accept":true}"#,
++            r#"{"id":7}"#,
++            r#"{"id":7,"accept":"yes"}"#,
++            r#"{"id":7,"accept":true,"other":1}"#,
++        ] {
++            assert!(serde_json::from_str::<Decision>(invalid).is_err());
++        }
++    }
++
+     #[test]
+     fn straight_and_curly_apostrophes_name_the_same_receiver() {
+         assert!(same_name("Jane's iPhone", "Jane's iPhone"));
+diff --git a/crates/owly-cli/src/main.rs b/crates/owly-cli/src/main.rs
+index d2bcdd3..b58debe 100644
+--- a/crates/owly-cli/src/main.rs
++++ b/crates/owly-cli/src/main.rs
+@@ -68,6 +68,9 @@ enum Radio {
+     },
+     /// Bring awdl0 up and hold it until Ctrl-C.
+     Up {
++        /// Emit a JSON ready event after the radio is acquired.
++        #[arg(long)]
++        json: bool,
+         /// Give it back after this many seconds.
+         #[arg(long = "for", value_name = "SECONDS", default_value_t = 0)]
+         duration: u32,
+@@ -91,7 +94,7 @@ fn main() -> ExitCode {
+             Command::Doctor { json } | Command::Radio(Radio::Probe { json }) => {
+                 doctor::run(bus, json).await
+             }
+-            Command::Radio(Radio::Up { duration }) => radio::up(bus, duration).await,
++            Command::Radio(Radio::Up { duration, json }) => radio::up(bus, duration, json).await,
+             Command::Radio(Radio::Peers) => radio::peers(bus).await,
+             Command::Receive(args) => airdrop::receive(bus, args).await,
+             Command::Send(args) => airdrop::send(bus, args).await,
+diff --git a/crates/owly-cli/src/radio.rs b/crates/owly-cli/src/radio.rs
+index 0caea92..5a0deb7 100644
+--- a/crates/owly-cli/src/radio.rs
++++ b/crates/owly-cli/src/radio.rs
+@@ -28,7 +28,7 @@ pub fn exit_code(e: &zbus::Error) -> (u8, String) {
+ 
+ /// Takes the radio and holds it until Ctrl-C, SIGTERM, the duration or
+ /// the link's end.
+-pub async fn up(bus: Option<&str>, duration: u32) -> Result<ExitCode, String> {
++pub async fn up(bus: Option<&str>, duration: u32, json: bool) -> Result<ExitCode, String> {
+     // Cached, for the stream of peer changes.
+     let conn = api::connect(bus).await.map_err(|e| unreachable(&e))?;
+     let radio = RadioProxy::new(&conn).await.map_err(|e| unreachable(&e))?;
+@@ -60,6 +60,11 @@ pub async fn up(bus: Option<&str>, duration: u32) -> Result<ExitCode, String> {
+             );
+         }
+     }
++    if json {
++        use std::io::Write;
++        println!("{}", serde_json::json!({"event":"ready"}));
++        let _ = std::io::stdout().flush();
++    }
+     let mut term = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
+     let mut peers = radio.receive_peers_changed().await;
+     loop {

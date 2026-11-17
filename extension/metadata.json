@@ -1,0 +1,15 @@
+{
+  "uuid": "owly-quick-settings@owly.local",
+  "name": "Owly Quick Settings",
+  "description": "AirDrop sharing tile with nearby devices and incoming requests in Quick Settings",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
+  "version": 4
+}
